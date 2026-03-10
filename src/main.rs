@@ -1,16 +1,12 @@
 use bevy::{color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*};
 use clap::{self, Parser};
-use grafton_visca::{
-    self,
-    command::{EncodeVisca, const_encoding::constants::pan_tilt},
-    types::PanSpeed,
-};
+use grafton_visca;
 use std::{
     net::{SocketAddr, UdpSocket},
     str::FromStr,
 };
 
-use virtual_visca::DecodeVisca;
+// use virtual_visca::DecodeVisca;
 
 #[derive(Resource)]
 struct UdpSocketResource(UdpSocket);
@@ -20,6 +16,9 @@ struct ViscaDriverConfig {
     expect_header: bool,
 }
 
+/**
+ * this guy's whole job is to read the network and emit the received Visca commands as events.
+ */
 struct ViscaDriverPlugin {
     socket: SocketAddr,
 }
@@ -71,6 +70,23 @@ struct PTZCameraPlugin;
 #[derive(Component)]
 struct MyCamera;
 
+#[derive(Component)]
+struct PTZVelocity {
+    pan: f32, tilt: f32, zoom: f32,
+}
+
+#[derive(Component)]
+struct CameraConfig {
+    pan_tilt_speed: f32,
+    zoom_speed: f32,
+    max_zoom: f32,
+    min_zoom: f32,
+}
+
+/**
+ * this guy's whole job is to emulate cameras and respond to inputs (visca command events or KBd)
+ * FIXME: doesnt need to treat kb inputs. should be handled in a system separate from this p^lugin.
+ */
 impl PTZCameraPlugin {
     fn sys_spawn_camera(mut commands: Commands) {
         commands.spawn((
@@ -96,12 +112,18 @@ impl PTZCameraPlugin {
                         tilt_speed,
                     } => {
                         use grafton_visca::PanTiltDirection::*;
+                        /// map a u8 to a value between 0.0 and 2.0
+                        fn u8_to_scale_factor(val: u8) -> f32 {
+                            2. * (val as f32) / ((2 ^ 8) as f32)
+                        }
+                        let pan_speed = u8_to_scale_factor(pan_speed.value()) * time.delta_secs();
+                        let tilt_speed = u8_to_scale_factor(tilt_speed.value()) * time.delta_secs();
                         match direction {
                             // TODO: this isnt right. we should be setting a delta of change, and resetting that delta on the Stop event.
-                            Up => cam_transform.rotate_local_x(1. * time.delta_secs()),
-                            Down => cam_transform.rotate_local_x(-1. * time.delta_secs()),
-                            Left => cam_transform.rotate_axis(Dir3::Y, 1. * time.delta_secs()),
-                            Right => cam_transform.rotate_axis(Dir3::Y, -1. * time.delta_secs()),
+                            Up => cam_transform.rotate_local_x(tilt_speed),
+                            Down => cam_transform.rotate_local_x(-tilt_speed),
+                            Left => cam_transform.rotate_axis(Dir3::Y, pan_speed),
+                            Right => cam_transform.rotate_axis(Dir3::Y, -pan_speed),
                             UpLeft => {
                                 // TODO: extract a pan_tilt_by(&transform, pan: f32, tilt: f32) function?
                                 cam_transform.rotate_local_x(1. * time.delta_secs());
@@ -125,8 +147,6 @@ impl PTZCameraPlugin {
     fn sys_ptz_keyboard_controls(
         keyboard: Res<ButtonInput<KeyCode>>,
         mut evt: EventWriter<ViscaCommand>,
-        mut cam_transform: Single<&mut Transform, With<MyCamera>>,
-        time: Res<Time>,
     ) {
         let are_pressed = |keycodes: &[KeyCode]| keycodes.iter().any(|&k| keyboard.pressed(k));
 
@@ -140,13 +160,31 @@ impl PTZCameraPlugin {
             ));
         }
         if are_pressed(&[KeyCode::ArrowLeft, KeyCode::KeyA]) {
-            cam_transform.rotate_axis(Dir3::Y, 1. * time.delta_secs());
+            evt.write(ViscaCommand::PanTilt(
+                grafton_visca::command::PanTilt::Move {
+                    direction: grafton_visca::PanTiltDirection::Left,
+                    pan_speed: grafton_visca::types::PanSpeed::MIN,
+                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
+                },
+            ));
         }
         if are_pressed(&[KeyCode::ArrowUp, KeyCode::KeyW]) {
-            cam_transform.rotate_local_x(1. * time.delta_secs());
+            evt.write(ViscaCommand::PanTilt(
+                grafton_visca::command::PanTilt::Move {
+                    direction: grafton_visca::PanTiltDirection::Up,
+                    pan_speed: grafton_visca::types::PanSpeed::MIN,
+                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
+                },
+            ));
         }
         if are_pressed(&[KeyCode::ArrowDown, KeyCode::KeyS]) {
-            cam_transform.rotate_local_x(-1. * time.delta_secs());
+            evt.write(ViscaCommand::PanTilt(
+                grafton_visca::command::PanTilt::Move {
+                    direction: grafton_visca::PanTiltDirection::Down,
+                    pan_speed: grafton_visca::types::PanSpeed::MIN,
+                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
+                },
+            ));
         }
     }
 }
