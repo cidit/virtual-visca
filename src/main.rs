@@ -1,6 +1,10 @@
 use bevy::{color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*};
 use clap::{self, Parser};
-use grafton_visca::{self, command::{const_encoding::constants::pan_tilt, EncodeVisca}, types::PanSpeed};
+use grafton_visca::{
+    self,
+    command::{EncodeVisca, const_encoding::constants::pan_tilt},
+    types::PanSpeed,
+};
 use std::{
     net::{SocketAddr, UdpSocket},
     str::FromStr,
@@ -113,6 +117,7 @@ impl PTZCameraPlugin {
                         println!("unimplemented command: {other:?}")
                     }
                 },
+                Zoom(zoom) => todo!(),
             }
         }
     }
@@ -149,7 +154,9 @@ impl PTZCameraPlugin {
 impl Plugin for PTZCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, Self::sys_spawn_camera)
-            .add_systems(Update, Self::sys_ptz_keyboard_controls);
+            .add_systems(Update, Self::sys_interpret_visca_commands)
+            .add_systems(Update, Self::sys_ptz_keyboard_controls)
+            .add_event::<ViscaCommand>();
     }
 }
 
