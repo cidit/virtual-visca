@@ -15,6 +15,7 @@ struct UdpSocketResource(UdpSocket);
 struct ViscaDriverConfig {
     expect_header: bool,
 }
+
 struct ViscaDriverPlugin {
     socket: SocketAddr,
 }

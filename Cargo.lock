@@ -1643,15 +1643,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap-port-flag"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68d7ad7d112eb7281c7d686a829aa2098aa236b5defb161044a52982fb5152e"
-dependencies = [
- "clap",
-]
-
-[[package]]
 name = "clap_builder"
 version = "4.5.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4565,7 +4556,6 @@ dependencies = [
  "bevy",
  "bevy_asset_loader",
  "clap",
- "clap-port-flag",
  "grafton-visca",
  "thiserror 2.0.18",
 ]
