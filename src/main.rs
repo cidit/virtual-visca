@@ -1,4 +1,6 @@
-use bevy::{color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*};
+use bevy::{
+    color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*,
+};
 use clap::{self, Parser};
 use grafton_visca;
 use std::{
@@ -70,17 +72,30 @@ struct PTZCameraPlugin;
 #[derive(Component)]
 struct MyCamera;
 
-#[derive(Component)]
+#[derive(Component, Default)]
 struct PTZVelocity {
-    pan: f32, tilt: f32, zoom: f32,
+    pan: f32,
+    tilt: f32,
+    zoom: f32,
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 struct CameraConfig {
     pan_tilt_speed: f32,
     zoom_speed: f32,
     max_zoom: f32,
     min_zoom: f32,
+}
+
+impl Default for CameraConfig {
+    fn default() -> Self {
+        Self {
+            pan_tilt_speed: 1.0,
+            zoom_speed: 1.0,
+            max_zoom: 5.0,
+            min_zoom: 0.5,
+        }
+    }
 }
 
 /**
@@ -93,7 +108,12 @@ impl PTZCameraPlugin {
             Camera3d::default(),
             MyCamera,
             Transform::from_xyz(0., 1.6, 3.).looking_at(Vec3::ZERO, Vec3::Y),
+            PTZVelocity::default(),
         ));
+    }
+
+    fn sys_apply_camera_velocity() {
+        todo!()
     }
 
     /// the big thing. applies the commands to the camera
@@ -134,7 +154,7 @@ impl PTZCameraPlugin {
                             DownRight => todo!(),
                             Stop => todo!(),
                         }
-                    }
+                    },
                     other => {
                         println!("unimplemented command: {other:?}")
                     }
@@ -143,57 +163,12 @@ impl PTZCameraPlugin {
             }
         }
     }
-
-    fn sys_ptz_keyboard_controls(
-        keyboard: Res<ButtonInput<KeyCode>>,
-        mut evt: EventWriter<ViscaCommand>,
-    ) {
-        let are_pressed = |keycodes: &[KeyCode]| keycodes.iter().any(|&k| keyboard.pressed(k));
-
-        if are_pressed(&[KeyCode::ArrowRight, KeyCode::KeyD]) {
-            evt.write(ViscaCommand::PanTilt(
-                grafton_visca::command::PanTilt::Move {
-                    direction: grafton_visca::PanTiltDirection::Right,
-                    pan_speed: grafton_visca::types::PanSpeed::MIN,
-                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
-                },
-            ));
-        }
-        if are_pressed(&[KeyCode::ArrowLeft, KeyCode::KeyA]) {
-            evt.write(ViscaCommand::PanTilt(
-                grafton_visca::command::PanTilt::Move {
-                    direction: grafton_visca::PanTiltDirection::Left,
-                    pan_speed: grafton_visca::types::PanSpeed::MIN,
-                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
-                },
-            ));
-        }
-        if are_pressed(&[KeyCode::ArrowUp, KeyCode::KeyW]) {
-            evt.write(ViscaCommand::PanTilt(
-                grafton_visca::command::PanTilt::Move {
-                    direction: grafton_visca::PanTiltDirection::Up,
-                    pan_speed: grafton_visca::types::PanSpeed::MIN,
-                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
-                },
-            ));
-        }
-        if are_pressed(&[KeyCode::ArrowDown, KeyCode::KeyS]) {
-            evt.write(ViscaCommand::PanTilt(
-                grafton_visca::command::PanTilt::Move {
-                    direction: grafton_visca::PanTiltDirection::Down,
-                    pan_speed: grafton_visca::types::PanSpeed::MIN,
-                    tilt_speed: grafton_visca::types::TiltSpeed::MIN,
-                },
-            ));
-        }
-    }
 }
 
 impl Plugin for PTZCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, Self::sys_spawn_camera)
             .add_systems(Update, Self::sys_interpret_visca_commands)
-            .add_systems(Update, Self::sys_ptz_keyboard_controls)
             .add_event::<ViscaCommand>();
     }
 }
@@ -213,6 +188,58 @@ fn sys_draw_gizmos(mut gizmos: Gizmos, _time: Res<Time>) {
         Vec2::new(2., 2.),
         GRAY,
     );
+}
+
+fn sys_ptz_keyboard_controls(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut evt: EventWriter<ViscaCommand>,
+) {
+    let up = keyboard.any_pressed([KeyCode::ArrowUp, KeyCode::KeyW]);
+    let down = keyboard.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]);
+    let left = keyboard.any_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
+    let right = keyboard.any_pressed([KeyCode::ArrowRight, KeyCode::KeyD]);
+
+    let speed = if keyboard.any_pressed([KeyCode::ShiftRight, KeyCode::ShiftLeft]) {
+        grafton_visca::types::SpeedLevel::Fast
+    } else if keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+        grafton_visca::types::SpeedLevel::Slow
+    } else {
+        grafton_visca::types::SpeedLevel::Medium
+    };
+
+    let direction = match (up, down, left, right) {
+        (true, false, true, false) => grafton_visca::PanTiltDirection::UpLeft,
+        (true, false, false, true) => grafton_visca::PanTiltDirection::UpRight,
+        (true, false, false, false) => grafton_visca::PanTiltDirection::Up,
+        (false, true, true, false) => grafton_visca::PanTiltDirection::DownLeft,
+        (false, true, false, true) => grafton_visca::PanTiltDirection::DownRight,
+        (false, true, false, false) => grafton_visca::PanTiltDirection::Down,
+        (false, false, true, false) => grafton_visca::PanTiltDirection::Left,
+        (false, false, false, true) => grafton_visca::PanTiltDirection::Right,
+        _ => grafton_visca::PanTiltDirection::Stop,
+    };
+
+    println!("{direction:?}");
+    evt.write(ViscaCommand::PanTilt(
+        grafton_visca::command::PanTilt::Move {
+            direction,
+            pan_speed: speed.into(),
+            tilt_speed: speed.into(),
+        },
+    ));
+
+    let zoom = match (up, down, left, right) {
+        (true, true, false, false) => {
+            grafton_visca::command::zoom::Zoom::TeleVariable(speed.into())
+        }
+        (false, false, true, true) => {
+            grafton_visca::command::zoom::Zoom::WideVariable(speed.into())
+        }
+        _ => grafton_visca::command::zoom::Zoom::Stop,
+    };
+
+    println!("{zoom:?}");
+    evt.write(ViscaCommand::Zoom(zoom));
 }
 
 #[derive(clap::Parser)]
@@ -244,6 +271,13 @@ fn main() {
     App::new()
         .add_plugins((DefaultPlugins, PTZCameraPlugin))
         .add_plugins(ViscaDriverPlugin { socket: visca })
-        .add_systems(Update, (sys_draw_gizmos, sys_esc_quits_game))
+        .add_systems(
+            Update,
+            (
+                sys_draw_gizmos,
+                sys_esc_quits_game,
+                sys_ptz_keyboard_controls.run_if(on_event::<KeyboardInput>),
+            ),
+        )
         .run();
 }
