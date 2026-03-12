@@ -1,8 +1,12 @@
-use bevy::{
-    color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*,
-};
+use bevy::{color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*};
 use clap::{self, Parser};
-use grafton_visca;
+use core::f32;
+use grafton_visca::{
+    self,
+    command::zoom::ZoomSpeed,
+    types::{PanSpeed, SpeedLevel, TiltSpeed},
+};
+use itertools::Itertools;
 use std::{
     net::{SocketAddr, UdpSocket},
     str::FromStr,
@@ -67,11 +71,6 @@ enum ViscaCommand {
     Zoom(grafton_visca::command::zoom::Zoom),
 }
 
-struct PTZCameraPlugin;
-
-#[derive(Component)]
-struct MyCamera;
-
 #[derive(Component, Default)]
 struct PTZVelocity {
     pan: f32,
@@ -79,15 +78,16 @@ struct PTZVelocity {
     zoom: f32,
 }
 
-#[derive(Resource)]
-struct CameraConfig {
+#[derive(Component)]
+struct CameraSettings {
     pan_tilt_speed: f32,
+    /// magnitude per seconds
     zoom_speed: f32,
     max_zoom: f32,
     min_zoom: f32,
 }
 
-impl Default for CameraConfig {
+impl Default for CameraSettings {
     fn default() -> Self {
         Self {
             pan_tilt_speed: 1.0,
@@ -102,64 +102,121 @@ impl Default for CameraConfig {
  * this guy's whole job is to emulate cameras and respond to inputs (visca command events or KBd)
  * FIXME: doesnt need to treat kb inputs. should be handled in a system separate from this p^lugin.
  */
+struct PTZCameraPlugin;
 impl PTZCameraPlugin {
     fn sys_spawn_camera(mut commands: Commands) {
         commands.spawn((
             Camera3d::default(),
-            MyCamera,
             Transform::from_xyz(0., 1.6, 3.).looking_at(Vec3::ZERO, Vec3::Y),
             PTZVelocity::default(),
+            CameraSettings::default(),
         ));
     }
 
-    fn sys_apply_camera_velocity() {
-        todo!()
+    fn sys_apply_camera_velocity(
+        query: Query<(
+            &mut Transform,
+            &mut Projection,
+            &PTZVelocity,
+            &CameraSettings,
+        )>,
+        time: Res<Time>,
+    ) {
+        for (mut transform, projection, velocity, settings) in query {
+            let Projection::Perspective(perspective) = projection.into_inner() else {
+                continue;
+            };
+            transform.rotate_local_x(velocity.tilt * settings.pan_tilt_speed * time.delta_secs());
+            transform.rotate_axis(
+                Dir3::Y,
+                velocity.pan * settings.pan_tilt_speed * time.delta_secs(),
+            );
+            let current_zoom = perspective.fov.tan().recip();
+            let new_zoom = (current_zoom + velocity.zoom * settings.zoom_speed * time.delta_secs())
+                .clamp(settings.min_zoom, settings.max_zoom);
+            perspective.fov = new_zoom.recip().atan();
+        }
     }
 
     /// the big thing. applies the commands to the camera
     fn sys_interpret_visca_commands(
         mut cmds: EventReader<ViscaCommand>,
-        mut cam_transform: Single<&mut Transform, With<MyCamera>>,
+        mut query: Query<(&mut PTZVelocity, &mut Transform, &mut CameraSettings)>,
         time: Res<Time>,
     ) {
+        fn scaled_u8(v: u8, min: u8, max: u8) -> f32 {
+            // scales value up to a max of 2x unit
+            2. * (v - min) as f32 / (max - min) as f32
+        }
         for cmd in cmds.read() {
-            use ViscaCommand::*;
-            match cmd {
-                PanTilt(pt) => match pt {
-                    grafton_visca::command::PanTilt::Move {
-                        direction,
-                        pan_speed,
-                        tilt_speed,
-                    } => {
-                        use grafton_visca::PanTiltDirection::*;
-                        /// map a u8 to a value between 0.0 and 2.0
-                        fn u8_to_scale_factor(val: u8) -> f32 {
-                            2. * (val as f32) / ((2 ^ 8) as f32)
-                        }
-                        let pan_speed = u8_to_scale_factor(pan_speed.value()) * time.delta_secs();
-                        let tilt_speed = u8_to_scale_factor(tilt_speed.value()) * time.delta_secs();
-                        match direction {
-                            // TODO: this isnt right. we should be setting a delta of change, and resetting that delta on the Stop event.
-                            Up => cam_transform.rotate_local_x(tilt_speed),
-                            Down => cam_transform.rotate_local_x(-tilt_speed),
-                            Left => cam_transform.rotate_axis(Dir3::Y, pan_speed),
-                            Right => cam_transform.rotate_axis(Dir3::Y, -pan_speed),
-                            UpLeft => {
-                                // TODO: extract a pan_tilt_by(&transform, pan: f32, tilt: f32) function?
-                                cam_transform.rotate_local_x(1. * time.delta_secs());
-                                cam_transform.rotate_axis(Dir3::Y, 1. * time.delta_secs());
+            for (mut velocity, transform, _settings) in query.iter_mut() {
+                match cmd {
+                    ViscaCommand::PanTilt(pan_tilt) => match pan_tilt {
+                        grafton_visca::command::PanTilt::Home => todo!(),
+                        grafton_visca::command::PanTilt::Reset => todo!(),
+                        grafton_visca::command::PanTilt::Move {
+                            direction,
+                            pan_speed,
+                            tilt_speed,
+                        } => {
+                            let tilt = scaled_u8(
+                                tilt_speed.value(),
+                                TiltSpeed::MIN.value(),
+                                TiltSpeed::MAX.value(),
+                            );
+                            let pan = scaled_u8(
+                                pan_speed.value(),
+                                PanSpeed::MIN.value(),
+                                PanSpeed::MAX.value(),
+                            );
+
+                            velocity.tilt = match direction {
+                                grafton_visca::PanTiltDirection::Up
+                                | grafton_visca::PanTiltDirection::UpLeft
+                                | grafton_visca::PanTiltDirection::UpRight => tilt,
+                                grafton_visca::PanTiltDirection::Down
+                                | grafton_visca::PanTiltDirection::DownLeft
+                                | grafton_visca::PanTiltDirection::DownRight => -tilt,
+                                _ => 0.,
+                            };
+                            velocity.pan = match direction {
+                                grafton_visca::PanTiltDirection::Left
+                                | grafton_visca::PanTiltDirection::UpLeft
+                                | grafton_visca::PanTiltDirection::DownLeft => pan,
+                                grafton_visca::PanTiltDirection::Right
+                                | grafton_visca::PanTiltDirection::UpRight
+                                | grafton_visca::PanTiltDirection::DownRight => -pan,
+                                _ => 0.,
                             }
-                            UpRight => todo!(),
-                            DownLeft => todo!(),
-                            DownRight => todo!(),
-                            Stop => todo!(),
                         }
+                        other => println!("unimplemented PanTilt command: {other:?}"),
                     },
-                    other => {
-                        println!("unimplemented command: {other:?}")
+                    ViscaCommand::Zoom(zoom) => {
+                        velocity.zoom = match zoom {
+                            grafton_visca::command::zoom::Zoom::Stop => 0.,
+                            grafton_visca::command::zoom::Zoom::TeleStd => scaled_u8(
+                                SpeedLevel::Medium.to_zoom_speed(),
+                                ZoomSpeed::MIN,
+                                ZoomSpeed::MAX,
+                            ),
+                            grafton_visca::command::zoom::Zoom::WideStd => -scaled_u8(
+                                SpeedLevel::Medium.to_zoom_speed(),
+                                ZoomSpeed::MIN,
+                                ZoomSpeed::MAX,
+                            ),
+                            grafton_visca::command::zoom::Zoom::TeleVariable(zoom_speed) => {
+                                scaled_u8(zoom_speed.value(), ZoomSpeed::MIN, ZoomSpeed::MAX)
+                            }
+                            grafton_visca::command::zoom::Zoom::WideVariable(zoom_speed) => {
+                                -scaled_u8(zoom_speed.value(), ZoomSpeed::MIN, ZoomSpeed::MAX)
+                            }
+                            other => {
+                                println!("unimplemented Zoom command: {other:?}");
+                                continue;
+                            }
+                        }
                     }
-                },
-                Zoom(zoom) => todo!(),
+                }
             }
         }
     }
@@ -169,6 +226,7 @@ impl Plugin for PTZCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, Self::sys_spawn_camera)
             .add_systems(Update, Self::sys_interpret_visca_commands)
+            .add_systems(Update, Self::sys_apply_camera_velocity)
             .add_event::<ViscaCommand>();
     }
 }
@@ -194,6 +252,15 @@ fn sys_ptz_keyboard_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut evt: EventWriter<ViscaCommand>,
 ) {
+    if keyboard
+        .get_just_pressed()
+        .chain(keyboard.get_just_released())
+        .count()
+        == 0
+    {
+        return;
+    }
+
     let up = keyboard.any_pressed([KeyCode::ArrowUp, KeyCode::KeyW]);
     let down = keyboard.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]);
     let left = keyboard.any_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
@@ -219,7 +286,7 @@ fn sys_ptz_keyboard_controls(
         _ => grafton_visca::PanTiltDirection::Stop,
     };
 
-    println!("{direction:?}");
+    println!("Direction: {direction:?}");
     evt.write(ViscaCommand::PanTilt(
         grafton_visca::command::PanTilt::Move {
             direction,
@@ -228,17 +295,15 @@ fn sys_ptz_keyboard_controls(
         },
     ));
 
-    let zoom = match (up, down, left, right) {
-        (true, true, false, false) => {
-            grafton_visca::command::zoom::Zoom::TeleVariable(speed.into())
-        }
-        (false, false, true, true) => {
-            grafton_visca::command::zoom::Zoom::WideVariable(speed.into())
-        }
-        _ => grafton_visca::command::zoom::Zoom::Stop,
+    let zoom = if keyboard.any_pressed([KeyCode::KeyQ, KeyCode::PageDown]) {
+        grafton_visca::command::zoom::Zoom::WideVariable(speed.into())
+    } else if keyboard.any_pressed([KeyCode::KeyE, KeyCode::PageUp]) {
+        grafton_visca::command::zoom::Zoom::TeleVariable(speed.into())
+    } else {
+        grafton_visca::command::zoom::Zoom::Stop
     };
 
-    println!("{zoom:?}");
+    println!("Zoom: {zoom:?}");
     evt.write(ViscaCommand::Zoom(zoom));
 }
 

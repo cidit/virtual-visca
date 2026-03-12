@@ -4557,6 +4557,7 @@ dependencies = [
  "bevy_asset_loader",
  "clap",
  "grafton-visca",
+ "itertools 0.14.0",
  "thiserror 2.0.18",
 ]
 
