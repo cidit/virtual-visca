@@ -75,7 +75,7 @@ impl PTZCameraPlugin {
 
     /// the big thing. applies the commands to the camera
     fn sys_interpret_visca_commands(
-        mut cmds: EventReader<visca::Command>,
+        mut cmds: MessageReader<visca::Command>,
         mut query: Query<(&mut PTZVelocity, &mut Transform, &mut CameraSettings)>,
         time: Res<Time>,
     ) {

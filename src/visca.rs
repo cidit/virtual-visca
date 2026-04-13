@@ -11,7 +11,7 @@ pub struct ViscaDriverConfig {
      expect_header: bool,
 }
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum Command {
     PanTilt(grafton_visca::command::PanTilt),
     Zoom(grafton_visca::command::zoom::Zoom),
@@ -26,7 +26,7 @@ pub struct ViscaDriverPlugin {
 
 impl ViscaDriverPlugin {
     fn rcv_and_emit(
-        mut events: EventWriter<Command>,
+        mut messages: MessageReader<Command>,
         socket: ResMut<UdpSocketResource>,
         cfg: Res<ViscaDriverConfig>,
     ) {
@@ -57,7 +57,7 @@ impl Plugin for ViscaDriverPlugin {
         app.insert_resource(UdpSocketResource(socket))
             .add_systems(Update, Self::rcv_and_emit)
             .init_resource::<ViscaDriverConfig>()
-            .add_event::<crate::visca::Command>();
+            .add_message::<crate::visca::Command>();
     }
 }
 

@@ -4,7 +4,7 @@ use virtual_visca;
 
 use std::{net::SocketAddr, str::FromStr};
 
-fn sys_esc_quits_game(mut exit: EventWriter<AppExit>, mut kb_events: EventReader<KeyboardInput>) {
+fn sys_esc_quits_game(mut exit: MessageWriter<AppExit>, mut kb_events: MessageReader<KeyboardInput>) {
     for event in kb_events.read() {
         if event.key_code == KeyCode::Escape {
             exit.write(AppExit::Success);
@@ -32,7 +32,7 @@ fn keyboard_changed(keyboard: Res<ButtonInput<KeyCode>>) -> bool {
 /// FIXME: maybe should be separate for zoom and pantilt?
 fn sys_ptz_keyboard_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut evt: EventWriter<virtual_visca::visca::Command>,
+    mut evt: MessageWriter<virtual_visca::visca::Command>,
 ) {
     let up = keyboard.any_pressed([KeyCode::ArrowUp, KeyCode::KeyW]);
     let down = keyboard.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]);
@@ -117,7 +117,7 @@ fn main() {
             (
                 sys_draw_gizmos,
                 sys_esc_quits_game,
-                sys_ptz_keyboard_controls.run_if(on_event::<KeyboardInput>.and(keyboard_changed)),
+                sys_ptz_keyboard_controls.run_if(on_message::<KeyboardInput>.and(keyboard_changed)),
             ),
         )
         .run();
