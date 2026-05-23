@@ -1,4 +1,5 @@
 use bevy::{color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*};
+use bevy_inspector_egui as inspector;
 use clap::{self, Parser};
 use virtual_visca;
 
@@ -107,6 +108,8 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
+            inspector::bevy_egui::EguiPlugin::default(),
+            inspector::quick::WorldInspectorPlugin::new(),
             virtual_visca::ptz_camera::PTZCameraPlugin,
             virtual_visca::visca::ViscaDriverPlugin {
                 socket: visca_soket,

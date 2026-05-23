@@ -1,5 +1,6 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, time::common_conditions::paused};
 use grafton_visca;
+use itertools::Itertools;
 
 use std::net::{SocketAddr, UdpSocket};
 
@@ -8,7 +9,7 @@ pub struct UdpSocketResource(UdpSocket);
 
 #[derive(Resource, Default)]
 pub struct ViscaDriverConfig {
-     expect_header: bool,
+    // expect_header: bool,
 }
 
 #[derive(Message)]
@@ -25,31 +26,31 @@ pub struct ViscaDriverPlugin {
 }
 
 impl ViscaDriverPlugin {
-
-    fn listen() {
-        async_net::UdpSocket
-    }
-    fn rcv_and_emit(
-        mut messages: MessageReader<Command>,
-        socket: ResMut<UdpSocketResource>,
-        cfg: Res<ViscaDriverConfig>,
-    ) {
-        let mut buf = [0; 16];
+    fn receive_packet(mut messages: MessageReader<Command>, socket: ResMut<UdpSocketResource>) {
+        let mut buf = [0; 24];
         let (num, src) = match socket.0.recv_from(&mut buf) {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return, // no data was read
             Err(e) => panic!("encountered IO error: {e}"),
             Ok(ok) => ok,
         };
 
-        if num == 0 {
-            return; // no data
-        }
-
         println!("recv {num} bytes from {src}: {buf:?}");
 
-        if cfg.expect_header {
-            println!("we're expecting headers, but dont do anything with it")
+        let payload = buf
+            .into_iter()
+            .skip(8) // skip UDP header
+            .take_while(|&it| it != 0xFF) // take until terminator
+            .skip(1) // skip camera address header
+            .collect_vec();
+
+        if payload.len() == 0 {
+            return; // not a valid visca command packet
         }
+
+        let payload = payload.into_iter();
+
+        // if Some()
+        
     }
 }
 
@@ -59,9 +60,8 @@ impl Plugin for ViscaDriverPlugin {
         socket.set_nonblocking(true).unwrap();
 
         app.insert_resource(UdpSocketResource(socket))
-            .add_systems(Update, Self::rcv_and_emit)
+            .add_systems(Update, Self::receive_packet)
             .init_resource::<ViscaDriverConfig>()
             .add_message::<crate::visca::Command>();
     }
 }
-

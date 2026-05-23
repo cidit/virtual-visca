@@ -89,7 +89,33 @@ fn ptd_from_u8s(pan_d: u8, tilt_d: u8) -> Result<gvc::PanTiltDirection, DecodeEr
     }
 }
 
-pub fn decode(buf: &[u8]) -> Result<visca::Command, DecodeError> {
+// https://pro.sony/s3/2022/09/14131603/VISCA-Command-List-Version-2.00.pdf (p.4)
+pub struct ViscaMessage([u8; 24]);
+
+impl ViscaMessage {
+    pub fn header(&self) -> &[u8; 8] {
+        self.0[..8].try_into().unwrap()
+    }
+    pub fn payload(&self) -> &[u8; 16] {
+        self.0[8..].try_into().unwrap()
+    }
+
+    pub fn payload_type(&self) -> &[u8; 2] {
+        self.header()[0..2].try_into().unwrap()
+    }
+    pub fn payload_length(&self) -> &[u8; 2] {
+        self.header()[2..4].try_into().unwrap()
+    }
+    pub fn sequence_number(&self) -> &[u8; 4] {
+        self.header()[4..].try_into().unwrap()
+    }
+}
+
+pub fn decode(buf: ViscaMessage) {
+    unimplemented!()
+}
+
+pub fn decode_tmp(buf: &[u8]) -> Result<visca::Command, DecodeError> {
     let mut itr = buf.into_iter();
 
     let Some(_id) = itr.next() else {
