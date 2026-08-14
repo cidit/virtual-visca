@@ -1,4 +1,4 @@
-use bevy::{prelude::*, time::common_conditions::paused};
+use bevy::prelude::*;
 use grafton_visca;
 use itertools::Itertools;
 
@@ -15,7 +15,7 @@ pub struct ViscaDriverConfig {
 #[derive(Message)]
 pub enum Command {
     PanTilt(grafton_visca::command::PanTilt),
-    Zoom(grafton_visca::command::zoom::Zoom),
+    Zoom(grafton_visca::command::Zoom),
 }
 
 /**

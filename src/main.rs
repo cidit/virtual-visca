@@ -5,7 +5,10 @@ use virtual_visca;
 
 use std::{net::SocketAddr, str::FromStr};
 
-fn sys_esc_quits_game(mut exit: MessageWriter<AppExit>, mut kb_events: MessageReader<KeyboardInput>) {
+fn sys_esc_quits_game(
+    mut exit: MessageWriter<AppExit>,
+    mut kb_events: MessageReader<KeyboardInput>,
+) {
     for event in kb_events.read() {
         if event.key_code == KeyCode::Escape {
             exit.write(AppExit::Success);
@@ -69,14 +72,35 @@ fn sys_ptz_keyboard_controls(
     ));
 
     let zoom = if keyboard.any_pressed([KeyCode::KeyQ, KeyCode::PageDown]) {
-        grafton_visca::command::zoom::Zoom::WideVariable(speed.into())
+        grafton_visca::command::Zoom::WideVariable(speed.into())
     } else if keyboard.any_pressed([KeyCode::KeyE, KeyCode::PageUp]) {
-        grafton_visca::command::zoom::Zoom::TeleVariable(speed.into())
+        grafton_visca::command::Zoom::TeleVariable(speed.into())
     } else {
-        grafton_visca::command::zoom::Zoom::Stop
+        grafton_visca::command::Zoom::Stop
     };
 
     evt.write(virtual_visca::visca::Command::Zoom(zoom));
+}
+
+fn spawn_menu(mut commands: Commands) {
+    let container = Node {
+        width: Val::Percent(100.0),
+        height: Val::Percent(100.0),
+        justify_content: JustifyContent::Center,
+        ..default()
+    };
+
+    let square = (
+        BackgroundColor(Color::srgb(0.65, 0.65, 0.65)),
+        Node {
+            width: Val::Percent(100.),
+            // width: Val::Px(200.),
+            border: UiRect::all(Val::Px(2.)),
+            ..default()
+        },
+    );
+
+    commands.spawn((container, children![(square)]));
 }
 
 #[derive(clap::Parser)]
@@ -115,6 +139,7 @@ fn main() {
                 socket: visca_soket,
             },
         ))
+        .add_systems(Startup, (spawn_menu))
         .add_systems(
             Update,
             (

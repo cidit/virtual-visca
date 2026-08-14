@@ -1,6 +1,6 @@
 use anyhow::{self};
 use grafton_visca::{
-    command::bytes::constants::{self, pan_tilt},
+    // command::bytes::constants::{self, pan_tilt},
     types::{PanSpeed, TiltSpeed},
 };
 use itertools::Itertools;
@@ -182,12 +182,12 @@ impl DecodeVisca for grafton_visca::command::PanTilt {
             }
         }
 
-        if let Some(_) = match_prefix(buf, pan_tilt::HOME) {
-            return Ok(Self::Home);
-        }
-        if let Some(_) = match_prefix(buf, pan_tilt::RESET) {
-            return Ok(Self::Reset);
-        }
+        // if let Some(_) = match_prefix(buf, pan_tilt::HOME) {
+        //     return Ok(Self::Home);
+        // }
+        // if let Some(_) = match_prefix(buf, pan_tilt::RESET) {
+        //     return Ok(Self::Reset);
+        // }
         unimplemented!()
         // Err(DecodeError::Unrecognized(buf))
         // match buf {

@@ -14,7 +14,13 @@ pub struct CaptureConfig {
     width: u32, height: u32, fps: u32,
 }
 
+#[derive(Component)]
+pub struct VideoCapture {
+    // pub render_target: RenderTarget
+}
+
 // TODO: this is dumb, just reuse the screen's. dont offer multiple video outputs.
+// no YOU'RE dumb! what about emulating multiple cameras on multiple ports?
 
 impl CaptureConfig {
     pub fn res_1080p30() -> Self {
@@ -33,9 +39,10 @@ pub struct CameraCapturePlugin;
 impl CameraCapturePlugin {
     fn setup_capture_targets(
         mut commands: Commands,
-        // mut cams: Query<(&CameraCapture, &mut Camera)>,
+        mut cams: Query<(&mut Camera)>,
     ) {
-        
+        for cam in cams {
+        }
     }
 }
 

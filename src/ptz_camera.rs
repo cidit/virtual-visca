@@ -6,6 +6,13 @@ use grafton_visca::types::TiltSpeed;
 
 use crate::visca;
 
+/// Enables a camera to be controlled via visca PTZ commands
+#[derive(Component)]
+#[require(Camera3d, PTZVelocity, CameraSettings)]
+pub struct ViscaEnabled;
+
+impl
+
 #[derive(Component, Default)]
 pub struct PTZVelocity {
     pub pan: f32,
@@ -128,21 +135,21 @@ impl PTZCameraPlugin {
                     },
                     visca::Command::Zoom(zoom) => {
                         velocity.zoom = match zoom {
-                            grafton_visca::command::zoom::Zoom::Stop => 0.,
-                            grafton_visca::command::zoom::Zoom::TeleStd => scaled_u8(
+                            grafton_visca::command::Zoom::Stop => 0.,
+                            grafton_visca::command::Zoom::TeleStd => scaled_u8(
                                 SpeedLevel::Medium.to_zoom_speed(),
                                 ZoomSpeed::MIN.value(),
                                 ZoomSpeed::MAX.value(),
                             ),
-                            grafton_visca::command::zoom::Zoom::WideStd => -scaled_u8(
+                            grafton_visca::command::Zoom::WideStd => -scaled_u8(
                                 SpeedLevel::Medium.to_zoom_speed(),
                                 ZoomSpeed::MIN.value(),
                                 ZoomSpeed::MAX.value(),
                             ),
-                            grafton_visca::command::zoom::Zoom::TeleVariable(zoom_speed) => {
+                            grafton_visca::command::Zoom::TeleVariable(zoom_speed) => {
                                 scaled_u8(zoom_speed.value(), ZoomSpeed::MIN.value(), ZoomSpeed::MAX.value())
                             }
-                            grafton_visca::command::zoom::Zoom::WideVariable(zoom_speed) => {
+                            grafton_visca::command::Zoom::WideVariable(zoom_speed) => {
                                 -scaled_u8(zoom_speed.value(), ZoomSpeed::MIN.value(), ZoomSpeed::MAX.value())
                             }
                             other => {
