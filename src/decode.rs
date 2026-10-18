@@ -6,7 +6,7 @@ use grafton_visca::{
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::visca;
+use crate::visca_socket;
 
 pub enum CategoryCode {
     Command,
@@ -115,7 +115,7 @@ pub fn decode(buf: ViscaMessage) {
     unimplemented!()
 }
 
-pub fn decode_tmp(buf: &[u8]) -> Result<visca::Command, DecodeError> {
+pub fn decode_tmp(buf: &[u8]) -> Result<visca_socket::Command, DecodeError> {
     let mut itr = buf.into_iter();
 
     let Some(_id) = itr.next() else {
@@ -141,14 +141,14 @@ pub fn decode_tmp(buf: &[u8]) -> Result<visca::Command, DecodeError> {
             .map(CommandCode::try_from)??
         {
             CommandCode::PanTilt => match itr.next().ok_or(DecodeError::Incomplete)? {
-                0x04 => Ok(visca::Command::PanTilt(gvc::PanTilt::Home)),
-                0x05 => Ok(visca::Command::PanTilt(gvc::PanTilt::Reset)),
+                0x04 => Ok(visca_socket::Command::PanTilt(gvc::PanTilt::Home)),
+                0x05 => Ok(visca_socket::Command::PanTilt(gvc::PanTilt::Reset)),
                 0x01 => {
                     let Some((pan_s, tilt_s, pan_d, tilt_d)) = itr.take(3).collect_tuple() else {
                         return Err(DecodeError::BadlyFormed(buf.to_vec()));
                     };
                     let direction = ptd_from_u8s(*pan_d, *tilt_d)?;
-                    Ok(visca::Command::PanTilt(gvc::PanTilt::Move {
+                    Ok(visca_socket::Command::PanTilt(gvc::PanTilt::Move {
                         direction,
                         pan_speed: PanSpeed::new(*pan_s).unwrap(),
                         tilt_speed: TiltSpeed::new(*tilt_s).unwrap(),

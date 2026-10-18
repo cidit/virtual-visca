@@ -1,9 +1,11 @@
 use bevy::{color::palettes::css::GRAY, input::keyboard::KeyboardInput, prelude::*};
+use bevy::feathers::{theme::{*}, dark_theme::create_dark_theme};
 use bevy_inspector_egui as inspector;
 use clap::{self, Parser};
-use virtual_visca;
+use virtual_visca::{self, visca_camera::ViscaEnabled};
 
-use std::{net::SocketAddr, str::FromStr};
+use std::net::{SocketAddr, UdpSocket};
+use std::str::FromStr;
 
 fn sys_esc_quits_game(
     mut exit: MessageWriter<AppExit>,
@@ -25,127 +27,55 @@ fn sys_draw_gizmos(mut gizmos: Gizmos, _time: Res<Time>) {
     );
 }
 
-fn keyboard_changed(keyboard: Res<ButtonInput<KeyCode>>) -> bool {
-    keyboard
-        .get_just_pressed()
-        .chain(keyboard.get_just_released())
-        .count()
-        != 0
+
+
+fn spawn_visca_camera(mut commands: Commands) {
+    let translation = Vec3::new(0., 1.6, 3.);
+    commands.spawn_scene(bsn! {
+        ViscaEnabled
+        Transform {
+            translation: translation,
+            // rotation: Quat::look_to_lh(-translation, Vec3::Y),
+        }
+    });
 }
 
-/// FIXME: maybe should be separate for zoom and pantilt?
-fn sys_ptz_keyboard_controls(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut evt: MessageWriter<virtual_visca::visca::Command>,
-) {
-    let up = keyboard.any_pressed([KeyCode::ArrowUp, KeyCode::KeyW]);
-    let down = keyboard.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]);
-    let left = keyboard.any_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
-    let right = keyboard.any_pressed([KeyCode::ArrowRight, KeyCode::KeyD]);
-
-    let speed = if keyboard.any_pressed([KeyCode::ShiftRight, KeyCode::ShiftLeft]) {
-        grafton_visca::types::SpeedLevel::Fast
-    } else if keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
-        grafton_visca::types::SpeedLevel::Slow
-    } else {
-        grafton_visca::types::SpeedLevel::Medium
-    };
-
-    let direction = match (up, down, left, right) {
-        (true, false, true, false) => grafton_visca::PanTiltDirection::UpLeft,
-        (true, false, false, true) => grafton_visca::PanTiltDirection::UpRight,
-        (true, false, false, false) => grafton_visca::PanTiltDirection::Up,
-        (false, true, true, false) => grafton_visca::PanTiltDirection::DownLeft,
-        (false, true, false, true) => grafton_visca::PanTiltDirection::DownRight,
-        (false, true, false, false) => grafton_visca::PanTiltDirection::Down,
-        (false, false, true, false) => grafton_visca::PanTiltDirection::Left,
-        (false, false, false, true) => grafton_visca::PanTiltDirection::Right,
-        _ => grafton_visca::PanTiltDirection::Stop,
-    };
-
-    evt.write(virtual_visca::visca::Command::PanTilt(
-        grafton_visca::command::PanTilt::Move {
-            direction,
-            pan_speed: speed.into(),
-            tilt_speed: speed.into(),
-        },
-    ));
-
-    let zoom = if keyboard.any_pressed([KeyCode::KeyQ, KeyCode::PageDown]) {
-        grafton_visca::command::Zoom::WideVariable(speed.into())
-    } else if keyboard.any_pressed([KeyCode::KeyE, KeyCode::PageUp]) {
-        grafton_visca::command::Zoom::TeleVariable(speed.into())
-    } else {
-        grafton_visca::command::Zoom::Stop
-    };
-
-    evt.write(virtual_visca::visca::Command::Zoom(zoom));
-}
-
-fn spawn_menu(mut commands: Commands) {
-    let container = Node {
-        width: Val::Percent(100.0),
-        height: Val::Percent(100.0),
-        justify_content: JustifyContent::Center,
-        ..default()
-    };
-
-    let square = (
-        BackgroundColor(Color::srgb(0.65, 0.65, 0.65)),
-        Node {
-            width: Val::Percent(100.),
-            // width: Val::Px(200.),
-            border: UiRect::all(Val::Px(2.)),
-            ..default()
-        },
-    );
-
-    commands.spawn((container, children![(square)]));
-}
-
-#[derive(clap::Parser)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    #[arg(long, value_name = "ADDRESS:PORT", default_value = "127.0.0.1:1259")]
-    visca_bind: String,
-
-    #[arg(long, value_name = "ADDRESS:PORT")]
-    video_bind: Option<String>,
-
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    debug: u8,
-}
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = virtual_visca::cli::Cli::parse();
 
     if cli.debug > 0 {
         println!("Hello, virtual-visca!");
     }
 
-    let visca_soket =
+    let visca_socket =
         SocketAddr::from_str(&cli.visca_bind).expect("could not parse `visca_bind` argument");
     if cli.debug > 0 {
-        dbg!(visca_soket);
+        dbg!(visca_socket);
     }
+
+    let socket = UdpSocket::bind(visca_socket).unwrap();
+    socket.set_nonblocking(true).unwrap();
 
     App::new()
         .add_plugins((
             DefaultPlugins,
+            // FeathersPlugins,
             inspector::bevy_egui::EguiPlugin::default(),
             inspector::quick::WorldInspectorPlugin::new(),
-            virtual_visca::ptz_camera::PTZCameraPlugin,
-            virtual_visca::visca::ViscaDriverPlugin {
-                socket: visca_soket,
-            },
+            virtual_visca::visca_camera::plugin,
+            // virtual_visca::visca_socket::plugin,
+            virtual_visca::visca_controls::plugin,
         ))
-        .add_systems(Startup, (spawn_menu))
+        // .insert_resource(virtual_visca::visca_socket::UdpSocketResource(socket))
+        .insert_resource(UiTheme(create_dark_theme()))
+        .add_message::<virtual_visca::visca_impl::Command>()
+        .add_systems(Startup, spawn_visca_camera)
         .add_systems(
             Update,
             (
                 sys_draw_gizmos,
                 sys_esc_quits_game,
-                sys_ptz_keyboard_controls.run_if(on_message::<KeyboardInput>.and(keyboard_changed)),
             ),
         )
         .run();
